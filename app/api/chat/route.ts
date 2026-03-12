@@ -2,8 +2,8 @@ import { streamText } from 'ai';
 import { deepseek } from '@ai-sdk/deepseek';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { extractQQNumber, isQQFortuneQuery } from './fortune/route';
-import { extractCity, isWeatherQuery } from './weather/route';
+import { extractQQNumber, isQQFortuneQuery } from './fortune/utils';
+import { extractCity, isWeatherQuery } from './weather/utils';
 
 // ============ 类型定义 ============
 interface ChatMessage {
