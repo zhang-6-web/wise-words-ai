@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Message, ChatSession, ChatSettings, DEFAULT_SETTINGS } from '../types/chat';
+import { Message, MessageImage, ChatSession, ChatSettings, DEFAULT_SETTINGS } from '../types/chat';
 
 interface UseChatReturn {
   messages: Message[];
@@ -10,7 +10,7 @@ interface UseChatReturn {
   setInput: (value: string) => void;
   isLoading: boolean;
   error: string | null;
-  sendMessage: () => Promise<void>;
+  sendMessage: (images?: MessageImage[]) => Promise<void>;
   stopGeneration: () => void;
   clearMessages: () => void;
   currentSession: ChatSession | null;
@@ -20,9 +20,7 @@ interface UseChatReturn {
   settings: ChatSettings;
   updateSettings: (settings: Partial<ChatSettings>) => void;
 }
-
 const SETTINGS_KEY = 'chat-settings';
-
 export function useChat(): UseChatReturn {
   const { data: session } = useSession();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -32,7 +30,6 @@ export function useChat(): UseChatReturn {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [settings, setSettings] = useState<ChatSettings>(DEFAULT_SETTINGS);
-  
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -87,21 +84,19 @@ export function useChat(): UseChatReturn {
     return title.length < firstMessage.length ? title + '...' : title;
   };
 
-  const sendMessage = useCallback(async () => {
-    if (!input.trim() || isLoading) return;
-
+  const sendMessage = useCallback(async (images?: MessageImage[]) => {
+    if ((!input.trim() && !images?.length) || isLoading) return;
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
       role: 'user',
-      content: input.trim(),
+      content: input.trim() || '[图片消息]',
       timestamp: Date.now(),
+      images: images,
     };
-
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
     setError(null);
-
     const assistantMessage: Message = {
       id: `msg-${Date.now() + 1}`,
       role: 'assistant',
@@ -109,11 +104,8 @@ export function useChat(): UseChatReturn {
       timestamp: Date.now(),
       isStreaming: true,
     };
-
     setMessages(prev => [...prev, assistantMessage]);
-
     abortControllerRef.current = new AbortController();
-
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -122,6 +114,7 @@ export function useChat(): UseChatReturn {
           messages: [...messages, userMessage].map(m => ({
             role: m.role,
             content: m.content,
+            images: m.images?.map(img => ({ base64: img.base64, name: img.name })),
           })),
           settings: {
             model: settings.model,
@@ -152,27 +145,30 @@ export function useChat(): UseChatReturn {
 
         const chunk = decoder.decode(value, { stream: true });
         accumulatedContent += chunk;
-        
-        setMessages(prev => 
-          prev.map(m => 
-            m.id === assistantMessage.id 
+
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMessage.id
               ? { ...m, content: accumulatedContent }
               : m
           )
         );
       }
 
-      const finalMessages = [...messages, userMessage, { ...assistantMessage, content: accumulatedContent, isStreaming: false }];
+      const finalMessages = [...messages, userMessage, {
+        ...assistantMessage, content: accumulatedContent,
+        isStreaming: false
+      }];
+      console.log('finialImages', finalMessages)
       setMessages(finalMessages);
-
       // 保存到数据库
       await saveSessionToDB(finalMessages);
 
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
-        setMessages(prev => 
-          prev.map(m => 
-            m.id === assistantMessage.id 
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMessage.id
               ? { ...m, isStreaming: false, content: m.content || '已停止生成' }
               : m
           )
@@ -196,9 +192,10 @@ export function useChat(): UseChatReturn {
       const dbMessages = currentMessages.map(m => ({
         role: m.role,
         content: m.content,
+        images: m.images?.map(img => ({ base64: img.base64, name: img.name })),
         timestamp: new Date(m.timestamp),
       }));
-
+      console.log('存储到数据库中的对话', dbMessages)
       if (currentSessionId) {
         // 更新现有会话
         await fetch(`/api/chat/sessions/${currentSessionId}`, {
@@ -213,12 +210,12 @@ export function useChat(): UseChatReturn {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ title: generateSessionTitle(title) }),
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           const newSessionId = data.session._id;
           setCurrentSessionId(newSessionId);
-          
+
           // 添加消息到新会话
           await fetch(`/api/chat/sessions/${newSessionId}`, {
             method: 'PUT',
@@ -255,6 +252,7 @@ export function useChat(): UseChatReturn {
           id: `msg-${Date.now()}-${Math.random()}`,
           role: m.role,
           content: m.content,
+          images: m.images?.map((img: any) => ({ base64: img.base64, name: img.name })),
           timestamp: new Date(m.timestamp).getTime(),
         }));
         setMessages(dbMessages);
@@ -270,7 +268,6 @@ export function useChat(): UseChatReturn {
       const response = await fetch(`/api/chat/sessions/${sessionId}`, {
         method: 'DELETE',
       });
-      
       if (response.ok) {
         setSessions(prev => prev.filter(s => s.id !== sessionId));
         if (currentSessionId === sessionId) {

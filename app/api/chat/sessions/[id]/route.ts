@@ -35,7 +35,6 @@ export async function GET(
     return NextResponse.json({ error: '获取会话失败' }, { status: 500 });
   }
 }
-
 // 更新会话（添加消息）- 修复版本
 export async function PUT(
   request: NextRequest,
@@ -44,17 +43,14 @@ export async function PUT(
   try {
     // 先 await params 获取 id
     const { id } = await params;
-    
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
-
     const body = await request.json();
+    console.log('[Chat Session PUT] 接收到的消息:', body);
     const { messages, title } = body;
-    
     console.log('[Chat Session PUT] 接收到的消息数量:', messages?.length);
-
     await connectDB();
 
     // 构建更新数据

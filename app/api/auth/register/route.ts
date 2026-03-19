@@ -62,9 +62,6 @@ export async function POST(request: NextRequest) {
       email: email.toLowerCase(),
       password: hashedPassword,
     });
-
-    console.log('[Register] New user created:', email);
-
     return NextResponse.json({
       success: true,
       message: '注册成功',
@@ -77,9 +74,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('[Register API Error]', error);
-    
     const errorMessage = error instanceof Error ? error.message : '注册失败';
-    
     return NextResponse.json(
       { success: false, message: errorMessage },
       { status: 500 }

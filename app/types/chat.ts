@@ -1,9 +1,16 @@
+export interface MessageImage {
+  preview?: string;
+  name: string;
+  base64?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: number;
   isStreaming?: boolean;
+  images?: MessageImage[];
 }
 
 export interface ChatSession {

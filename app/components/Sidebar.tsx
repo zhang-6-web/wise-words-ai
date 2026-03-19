@@ -12,6 +12,7 @@ import {
   Clock
 } from 'lucide-react';
 import Image from 'next/image';
+import { Modal } from 'antd';
 
 interface SidebarProps {
   sessions: ChatSession[];
@@ -90,7 +91,9 @@ export function Sidebar({
           </div>
 
           <button
-            onClick={onNewChat}
+            onClick={(e) => {
+              onNewChat()
+            }}
             className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 px-4 rounded-xl transition-colors font-medium"
           >
             <Plus className="w-5 h-5" />
@@ -136,7 +139,13 @@ export function Sidebar({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDeleteSession(session.id);
+                    Modal.confirm({
+                      title: '删除对话',
+                      content: '确定要删除此对话吗？',
+                      onOk() {
+                        onDeleteSession(session.id);
+                      },
+                    });
                   }}
                   className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-600/20 hover:text-red-400 rounded-lg transition-all"
                   title="删除对话"
@@ -149,7 +158,7 @@ export function Sidebar({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-800">
+        {/* <div className="p-4 border-t border-gray-800">
           <button
             onClick={onOpenSettings}
             className="w-full flex items-center gap-3 px-4 py-2.5 text-gray-300 hover:bg-gray-800 rounded-xl transition-colors"
@@ -157,7 +166,7 @@ export function Sidebar({
             <Settings className="w-5 h-5" />
             <span>设置</span>
           </button>
-        </div>
+        </div> */}
       </aside>
     </>
   );

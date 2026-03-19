@@ -9,6 +9,7 @@ import { extractCity, isWeatherQuery } from './weather/utils';
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  images?: { base64: string; name: string }[];
 }
 
 interface ChatRequest {
@@ -23,9 +24,11 @@ interface ChatRequest {
 
 interface QueryContext {
   userMessage: string;
+  userImages?: { base64: string; name: string }[];
   env: {
     weatherKey?: string;
     fortuneKey?: string;
+    zhipuKey?: string;
   };
 }
 
@@ -44,16 +47,14 @@ const weatherHandler: QueryHandler = async ({ userMessage, env }) => {
   if (!env.weatherKey) {
     return { type: 'weather', success: false, error: '天气服务未配置' };
   }
-
   const city = extractCity(userMessage);
-  
   try {
     // 1. 获取城市ID
     const geoRes = await fetch(
       `https://pp3jpgvnhx.re.qweatherapi.com/geo/v2/city/lookup?location=${city}&key=${env.weatherKey}`
     );
     const geoData = await geoRes.json();
-    
+
     if (geoData.code !== '200' || !geoData.location?.length) {
       return { type: 'weather', success: false, error: `未找到城市"${city}"` };
     }
@@ -66,7 +67,6 @@ const weatherHandler: QueryHandler = async ({ userMessage, env }) => {
       `https://pp3jpgvnhx.re.qweatherapi.com/v7/weather/now?location=${loc.id}&key=${env.weatherKey}`
     );
     const weatherData = await weatherRes.json();
-
     if (weatherData.code !== '200') {
       return { type: 'weather', success: false, error: `天气数据错误: ${weatherData.code}` };
     }
@@ -87,14 +87,13 @@ const weatherHandler: QueryHandler = async ({ userMessage, env }) => {
     return { type: 'weather', success: true, data };
 
   } catch (err) {
-    return { 
-      type: 'weather', 
-      success: false, 
-      error: err instanceof Error ? err.message : '天气查询失败' 
+    return {
+      type: 'weather',
+      success: false,
+      error: err instanceof Error ? err.message : '天气查询失败'
     };
   }
 };
-
 const qqFortuneHandler: QueryHandler = async ({ userMessage, env }) => {
   if (!isQQFortuneQuery(userMessage)) return null;
   if (!env.fortuneKey) {
@@ -119,10 +118,10 @@ const qqFortuneHandler: QueryHandler = async ({ userMessage, env }) => {
         10012: 'QQ号码格式不正确，请输入5-11位数字',
         10013: 'API调用次数已达上限',
       };
-      return { 
-        type: 'qqFortune', 
-        success: false, 
-        error: errorMap[data.error_code] || `查询失败: ${data.reason || data.error_code}` 
+      return {
+        type: 'qqFortune',
+        success: false,
+        error: errorMap[data.error_code] || `查询失败: ${data.reason || data.error_code}`
       };
     }
 
@@ -136,10 +135,71 @@ const qqFortuneHandler: QueryHandler = async ({ userMessage, env }) => {
     return { type: 'qqFortune', success: true, data: info };
 
   } catch (err) {
+    return {
+      type: 'qqFortune',
+      success: false,
+      error: err instanceof Error ? err.message : 'QQ吉凶查询失败'
+    };
+  }
+};
+// ============ 图片解析工具 ============
+const imageParseHandler: QueryHandler = async ({ userMessage, userImages, env }) => {
+  // 只要用户发送了图片就触发解析
+  if (!userImages || userImages.length === 0) return null;
+  if (!env.zhipuKey) {
+    return { type: 'imageParse', success: false, error: '图片解析服务未配置' };
+  }
+  try {
+    // 解析所有图片
+    const parseResults: string[] = [];
+    
+    for (let i = 0; i < userImages.length; i++) {
+      const img = userImages[i];
+      const response = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${env.zhipuKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'glm-4v-flash',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: { url: img.base64 }
+                },
+                {
+                  type: 'text',
+                  text: '请详细描述这张图片的内容，包括画面中的主要元素、场景、颜色、氛围等。'
+                }
+              ]
+            }
+          ],
+          max_tokens: 512,
+          temperature: 0.3
+        })
+      });
+      
+      const data = await response.json();
+      const description = data.choices?.[0]?.message?.content || '无法解析图片';
+      parseResults.push(`【图片${i + 1}${img.name ? ` - ${img.name}` : ''}】\n${description}`);
+    }
+
+    const result = parseResults.join('\n\n');
     return { 
-      type: 'qqFortune', 
-      success: false, 
-      error: err instanceof Error ? err.message : 'QQ吉凶查询失败' 
+      type: 'imageParse', 
+      success: true, 
+      data: `🖼️ 图片解析结果：\n\n${result}\n\n💡 以上是对用户发送图片的自动解析，请基于这些描述回答用户的问题。` 
+    };
+
+  } catch (err) {
+    return {
+      type: 'imageParse',
+      success: false,
+      error: err instanceof Error ? err.message : '图片解析失败'
     };
   }
 };
@@ -169,19 +229,19 @@ class PromptBuilder {
 用户询问的是历史天气，但天气API只提供今天和未来预报。
 请说明无法查询历史天气的原因，并提供今天天气作为参考。`);
     }
-    
+
     if (userMessage.includes('多个') || userMessage.includes('批量')) {
       this.sections.push(`【重要提示】
 用户似乎想批量查询，但目前API只支持单个查询。
 请说明无法批量查询，建议逐个查询。`);
     }
-    
+
     return this;
   }
 
   build(): string {
-    const extraSections = this.sections.length > 0 
-      ? '\n\n' + this.sections.join('\n\n') 
+    const extraSections = this.sections.length > 0
+      ? '\n\n' + this.sections.join('\n\n')
       : '';
     return this.basePrompt + extraSections;
   }
@@ -190,6 +250,7 @@ class PromptBuilder {
     const headers: Record<string, string> = {
       weather: '实时天气数据（来自和风天气API）',
       qqFortune: 'QQ吉凶测试结果（来自聚合数据API）',
+      imageParse: '图片解析结果（来自智谱AI视觉模型）',
     };
 
     return `========== ${headers[result.type] || '查询结果'} ==========
@@ -227,18 +288,19 @@ export async function POST(req: Request) {
     const lastMessage = messages[messages.length - 1];
     const context: QueryContext = {
       userMessage: lastMessage.content,
+      userImages: lastMessage.images,
       env: {
         weatherKey: process.env.QWEATHER_API_KEY,
         fortuneKey: process.env.JUHE_API_KEY,
+        zhipuKey: process.env.ZHIPU_API_KEY,
       },
     };
 
     // 4. 执行所有查询处理器（并行）
-    const handlers = [weatherHandler, qqFortuneHandler];
+    const handlers = [weatherHandler, qqFortuneHandler, imageParseHandler];
     const results = await Promise.all(
       handlers.map(h => h(context))
     );
-
     // 5. 构建系统提示词
     const builder = new PromptBuilder(
       settings?.systemPrompt || '你是一个智能助手，可以帮助用户解答各种问题。'
@@ -246,8 +308,8 @@ export async function POST(req: Request) {
 
     // 添加查询结果
     results.filter((r): r is QueryResult => r !== null)
-           .forEach(r => builder.addQueryResult(r));
-    
+      .forEach(r => builder.addQueryResult(r));
+
     // 添加特殊场景提示
     builder.addSpecialNotice(lastMessage.content);
 
@@ -266,7 +328,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('Chat API error:', error);
     return jsonResponse(
-      { error: error instanceof Error ? error.message : 'Internal server error' }, 
+      { error: error instanceof Error ? error.message : 'Internal server error' },
       500
     );
   }

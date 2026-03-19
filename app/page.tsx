@@ -68,12 +68,10 @@ export default function ChatPage() {
 
   const handleNewChat = () => {
     clearMessages();
-    setIsSidebarOpen(false);
   };
 
   const handleSelectSession = (sessionId: string) => {
     loadSession(sessionId);
-    setIsSidebarOpen(false);
   };
   return (
     <div className="relative flex h-screen bg-gray-950 text-gray-100 overflow-hidden
@@ -149,7 +147,7 @@ export default function ChatPage() {
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto scroll-smooth"
+          className="flex-1 overflow-y-auto scroll-smooth pb-24"
         >
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-4">
@@ -228,12 +226,12 @@ export default function ChatPage() {
       </div>
 
       {/* Settings Modal */}
-      <SettingsModal
+      {/* <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={settings}
         onSave={updateSettings}
-      />
+      /> */}
     </div>
   );
 }
